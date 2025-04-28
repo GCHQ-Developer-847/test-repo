@@ -2,17 +2,49 @@ name: Add issue urgency
 
 on:
   issues:
-    types:
-      - opened
+    types: [opened, edited]
 
 jobs:
   add-issue-urgency:
     runs-on: ubuntu-latest
     steps:
-      - name: Add issue urgency
-        uses: nipe0324/update-project-v2-item-field@v2.0.2
+      - name: Parse issue body
+        id: parse
+        uses: zentered/issue-forms-body-parser@93bd9fdcb3679be1889d2006e9c2cf496899402e #v2.2.0
+
+      - name: Get issue urgency
+        env:
+          URGENCY_STRING: ${{ fromJSON(steps.parse.outputs.data).urgency-low-medium-or-high.text }}
+        if: env.URGENCY_STRING
+        run: |
+          urgencyLevels=("high" "medium" "low")
+          matchedUrgency="None"
+          urgencyString="${{ env.URGENCY_STRING }}"
+
+          for level in "${urgencyLevels[@]}"; do
+            if [[ "${urgencyString,,}" == *"$level"* ]]; then
+              matchedUrgency="${level^}"
+              break
+            fi
+          done
+
+          if [[ "$matchedUrgency" != "None" ]]; then
+            echo "MATCHED_URGENCY=$matchedUrgency" >> $GITHUB_ENV
+          fi
+
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a #v2.1.0
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.PRIVATE_KEY }}
+
+      - name: Populate urgency field on issue
+        if: env.MATCHED_URGENCY
+        uses: nipe0324/update-project-v2-item-field@c4af58452d1c5a788c1ea4f20e073fa722ec4a6b #v2.0.2
         with:
           project-url: https://github.com/users/GCHQ-Developer-847/projects/3
           github-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           field-name: "Urgency"
-          field-value: "High"
+          field-value-script: |
+            return `${{ env.MATCHED_URGENCY }} urgency`;
